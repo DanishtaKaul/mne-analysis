@@ -1,0 +1,8 @@
+name: mne-dependencies
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - mne
+  - autoreject
+prefix: C:\Users\danis\anaconda3\envs\mne-dependencies
