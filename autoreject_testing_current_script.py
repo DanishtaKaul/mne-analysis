@@ -20,7 +20,7 @@ PRE-PROCESSING
 9. Plot the data for a quality check
 10. Save cleaned data into a file format for futher processing.
 """
-
+import os
 import numpy as np
 from scipy import signal
 import mne
@@ -30,128 +30,102 @@ from mne.time_frequency import tfr_morlet as time_frequency_morlet
 import matplotlib.pyplot as plot
 from preprocessing import *
 
+experiment_root = r"E:\backup\PID 2 Light study"
 
-def main():
-    file_path = r"E:\PID 2 Light study\FIF EEG Data\PID 2 Ambient Expected.fif"
-    montage_path = r"E:\Montage\Standard-10-10-Cap33_V6.loc"
+# Navigate through an experiments file structure in the continuous matter of which the experiment ran
+
+
+def navigate_experiment(experiment_root):
+    eeg_dir = None
+    unity_dir = None
+
+    for item in os.listdir(experiment_root):
+        item_path = os.path.join(experiment_root, item)
+        if os.path.isdir(item_path):
+            lower_item = item.lower()
+            if 'fif' in lower_item:
+                eeg_dir = item_path
+            elif 'unity' in lower_item:
+                unity_dir = item_path
+
+    if eeg_dir is None:
+        print("No EEG folder (with 'fif' in its name) found in experiment root.")
+        return
+    if unity_dir is None:
+        print("No Unity folder (with 'unity' in its name) found in experiment root.")
+        return
+
+    light_conditions = ['light', 'ambient', 'dark']
+    obstacle_conditions = ['expected', 'unexpected']
+
+    for light in light_conditions:
+        for obstacle in obstacle_conditions:
+            eeg_file_path = None
+            for file in os.listdir(eeg_dir):
+                if file.lower().endswith('.fif') and (light in file.lower()) and (obstacle in file.lower()):
+                    eeg_file_path = os.path.join(eeg_dir, file)
+                    break
+
+            if eeg_file_path is None:
+                print(f"No EEG file found for condition: {light} & {obstacle}")
+                continue
+
+            unity_block_dir = None
+            for folder in os.listdir(unity_dir):
+                folder_path = os.path.join(unity_dir, folder)
+                if os.path.isdir(folder_path) and (light in folder.lower()) and (obstacle in folder.lower()):
+                    unity_block_dir = folder_path
+                    break
+
+            if unity_block_dir is None:
+                print(
+                    f"No Unity block folder found for condition: {light} & {obstacle}")
+                continue
+
+            s_folder = None
+            for folder in os.listdir(unity_block_dir):
+                folder_path = os.path.join(unity_block_dir, folder)
+                if os.path.isdir(folder_path) and folder.lower().startswith('s'):
+                    s_folder = folder_path
+                    break
+
+            if s_folder is None:
+                print(
+                    f"No subfolder starting with 'S' found in Unity block folder for condition: {light} & {obstacle}")
+                continue
+
+            trial_results_path = os.path.join(s_folder, "trial_results.csv")
+            if not os.path.exists(trial_results_path):
+                print(
+                    f"trial_results.csv not found in {s_folder} for condition: {light} & {obstacle}")
+                continue
+
+            print(f"Processing condition: {light.title()}, {obstacle.title()}")
+            block_preprocessing(eeg_file_path, trial_results_path)
+
+# This function is called over each block within an experiment
+
+
+def block_preprocessing(file_path, meta_info_path):
+
+    print('\n ===== \n')
+    print('block_preprocessing called')
+    print(f"file_path: {file_path}")
+    print(f"meta_info_path: {meta_info_path}")
+    print('\n ===== \n')
+    return
+
+    montage_path = r"E:\Montage\Standard-10-10-Cap33_V6.loc"  # Constant
+
+    file_path = r"E:\PID 2 Light study\FIF EEG Data\PID 2 Ambient Expected.fif"  # EEG data
     meta_info_path = r"E:\PID 2 Light study\PID 2 Unity Data\PID 2 Ambient Expected\S001\trial_results.csv"
 
     raw = load_and_configure_data(file_path, montage_path)
 
     filter_and_detrend_data(raw)
-# =============================================================================
-#     apply_ICA(raw)
-# =============================================================================
+
+    apply_ICA(raw)
     trial_events = create_trial_events(raw)
     create_epochs(raw, trial_events, meta_info_path)
 
     raw.plot()
-
-
-main()
-
-# Make epochs from events in raw to identify crossing times of obstacles
-
-
-# Step 2: Initialize AutoReject
-autoreject = AutoReject(
-    verbose=True,
-    random_state=42,
-    n_jobs=-1,
-    # Use Bayesian optimization for thresholds
-    thresh_method='bayesian_optimization',
-    cv=10  # Cross-validation for threshold estimation
-
-
-)
-
-# Step 3: Fit AutoReject on epochs
-autoreject.fit(epochs)
-
-# Step 4: Transform epochs using AutoReject
-epochs_clean_ar, reject_log = autoreject.transform(epochs, return_log=True)
-
-epochs_clean_ar.apply_baseline(
-    baseline=(epochs_clean_ar.tmin, epochs_clean_ar.tmin + 1.0))
-
-epochs_clean_ar.set_eeg_reference('average', projection=False)
-
-
-# Step 5: Plot rejection log
-reject_log.plot('horizontal')
-
-# Step 6: Plot cleaned epochs
-epochs_clean_ar.plot(
-    n_epochs=len(epochs_clean_ar),  # Display all epochs at a time
-    n_channels=32,  # Display 10 channels at a time
-    scalings='auto',
-    title='Further Cleaned Epochs'
-)
-
-
-# Define frequency range (3–40 Hz) and corresponding number of cycles
-freqs = np.linspace(3, 40, 50)  # 50 frequencies between 3 and 40 Hz
-# Number of cycles (adjust for desired time-frequency resolution)
-n_cycles = freqs / 3
-
-# Select the Fz channel
-picks = mne.pick_channels(epochs_clean_ar.info['ch_names'], include=['Fz'])
-
-# Compute time-frequency representation using Morlet wavelets
-power = mne.time_frequency.tfr_morlet(
-    epochs_clean_ar,
-    freqs=freqs,
-    n_cycles=n_cycles,
-    picks=picks,
-    return_itc=False,  # Return only power, not inter-trial coherence
-)
-
-# Plot the TFR for the Fz electrode
-power.plot(
-    picks='Fz',
-    baseline=(-2.5, -1.5),  # Baseline period: 2.5 seconds before event onset
-    # Baseline correction mode (subtract mean baseline power)
-    mode='percent',
-    title='Time-Frequency Plot (3–40 Hz, Fz Electrode, % Change from Baseline)',
-
-    cmap='viridis'
-)
-
-
-# Fit ICA
-# ica = mne.preprocessing.ICA(n_components=0.98, random_state=42)
-# ica.fit(epochs_clean[good_epochs_mask], decim=3)
-
-# print("ICA fitting complete!")
-
-# ica.plot_components()
-
-
-# # Initialize exclusion parameters
-# ica.exclude = []  # Start with no excluded components
-# num_excl = 0      # Number of excluded components
-# max_ic = 2        # Maximum EOG-related components to exclude
-# z_thresh = 3.5    # Initial z-score threshold for detecting bad components
-# z_step = 0.05     # Step to reduce z-score threshold iteratively
-
-# # Iteratively detect EOG-related components
-# while num_excl < max_ic:
-#     eog_indices, eog_scores = ica.find_bads_eog(
-#         epochs_clean,  # Use the cleaned epochs
-#         ch_name=['FP1', 'FP2', 'F7', 'F8'],  # Specify frontal channels for EOG
-#         threshold=z_thresh  # Threshold for detection
-#     )
-#     num_excl = len(eog_indices)  # Count identified components
-#     z_thresh -= z_step  # Decrease threshold for further iterations
-
-# # Assign bad EOG components for exclusion
-# ica.exclude = eog_indices
-
-# # Print final threshold used for detection
-# print('Final z threshold = ' + str(round(z_thresh, 2)))
-
-# # Apply ICA to exclude identified components
-# ica.apply(epochs_clean)
-
-# # Visualize cleaned epochs (optional)
-# epochs_clean.plot()
