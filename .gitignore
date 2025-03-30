@@ -5,3 +5,5 @@ data/
 results/
 *.csv
 *.xlsx
+./spyproject/
+./private
