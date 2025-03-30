@@ -30,7 +30,8 @@ from mne.time_frequency import tfr_morlet as time_frequency_morlet
 import matplotlib.pyplot as plot
 from preprocessing import *
 
-experiment_root = r"E:\backup\PID 2 Light study"
+experiment_root = r"E:\PID 3"
+montage_path = r"E:\Montage\Standard-10-10-Cap33_V6.loc"
 
 # Navigate through an experiments file structure in the continuous matter of which the experiment ran
 
@@ -39,6 +40,10 @@ def navigate_experiment(experiment_root):
     eeg_dir = None
     unity_dir = None
 
+    # Print the contents of experiment_root for debugging purposes.
+    print(os.listdir(experiment_root))
+
+    # Find the EEG and Unity directories.
     for item in os.listdir(experiment_root):
         item_path = os.path.join(experiment_root, item)
         if os.path.isdir(item_path):
@@ -55,14 +60,25 @@ def navigate_experiment(experiment_root):
         print("No Unity folder (with 'unity' in its name) found in experiment root.")
         return
 
+    # Define conditions.
     light_conditions = ['light', 'ambient', 'dark']
     obstacle_conditions = ['expected', 'unexpected']
 
+    # Process each combination of conditions.
     for light in light_conditions:
         for obstacle in obstacle_conditions:
+
+            # Search for the appropriate EEG file.
             eeg_file_path = None
             for file in os.listdir(eeg_dir):
-                if file.lower().endswith('.fif') and (light in file.lower()) and (obstacle in file.lower()):
+                file_lower = file.lower()
+                if file_lower.endswith('.fif') and (light in file_lower):
+                    # For "expected", ensure "unexpected" is not present.
+                    if obstacle == 'expected' and 'unexpected' in file_lower:
+                        continue
+                    # For "unexpected", ensure "unexpected" is present.
+                    elif obstacle == 'unexpected' and 'unexpected' not in file_lower:
+                        continue
                     eeg_file_path = os.path.join(eeg_dir, file)
                     break
 
@@ -70,10 +86,16 @@ def navigate_experiment(experiment_root):
                 print(f"No EEG file found for condition: {light} & {obstacle}")
                 continue
 
+            # Search for the appropriate Unity block folder.
             unity_block_dir = None
             for folder in os.listdir(unity_dir):
+                folder_lower = folder.lower()
                 folder_path = os.path.join(unity_dir, folder)
-                if os.path.isdir(folder_path) and (light in folder.lower()) and (obstacle in folder.lower()):
+                if os.path.isdir(folder_path) and (light in folder_lower):
+                    if obstacle == 'expected' and 'unexpected' in folder_lower:
+                        continue
+                    elif obstacle == 'unexpected' and 'unexpected' not in folder_lower:
+                        continue
                     unity_block_dir = folder_path
                     break
 
@@ -82,6 +104,7 @@ def navigate_experiment(experiment_root):
                     f"No Unity block folder found for condition: {light} & {obstacle}")
                 continue
 
+            # Locate the subfolder starting with 'S'.
             s_folder = None
             for folder in os.listdir(unity_block_dir):
                 folder_path = os.path.join(unity_block_dir, folder)
@@ -94,31 +117,21 @@ def navigate_experiment(experiment_root):
                     f"No subfolder starting with 'S' found in Unity block folder for condition: {light} & {obstacle}")
                 continue
 
+            # Check if trial_results.csv exists.
             trial_results_path = os.path.join(s_folder, "trial_results.csv")
             if not os.path.exists(trial_results_path):
                 print(
                     f"trial_results.csv not found in {s_folder} for condition: {light} & {obstacle}")
                 continue
 
+            # Process the block.
             print(f"Processing condition: {light.title()}, {obstacle.title()}")
             block_preprocessing(eeg_file_path, trial_results_path)
-
-# This function is called over each block within an experiment
 
 
 def block_preprocessing(file_path, meta_info_path):
 
-    print('\n ===== \n')
-    print('block_preprocessing called')
-    print(f"file_path: {file_path}")
-    print(f"meta_info_path: {meta_info_path}")
-    print('\n ===== \n')
-    return
-
-    montage_path = r"E:\Montage\Standard-10-10-Cap33_V6.loc"  # Constant
-
-    file_path = r"E:\PID 2 Light study\FIF EEG Data\PID 2 Ambient Expected.fif"  # EEG data
-    meta_info_path = r"E:\PID 2 Light study\PID 2 Unity Data\PID 2 Ambient Expected\S001\trial_results.csv"
+    # Constant
 
     raw = load_and_configure_data(file_path, montage_path)
 
@@ -129,3 +142,6 @@ def block_preprocessing(file_path, meta_info_path):
     create_epochs(raw, trial_events, meta_info_path)
 
     raw.plot()
+
+
+navigate_experiment(experiment_root)
