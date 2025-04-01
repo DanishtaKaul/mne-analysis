@@ -30,8 +30,15 @@ from mne.time_frequency import tfr_morlet as time_frequency_morlet
 import matplotlib.pyplot as plot
 from preprocessing import *
 
-experiment_root = r"E:\PID 3"
+debug = False
+experiments = [r"E:\PID 3", r"E:\PID 4", r"E:\PID 5"]
+# experiment_root = r"E:\PID 3"
 montage_path = r"E:\Montage\Standard-10-10-Cap33_V6.loc"
+
+
+def load_multiple_experiments():
+    for experiment in experiments:
+        navigate_experiment(experiment)
 
 # Navigate through an experiments file structure in the continuous matter of which the experiment ran
 
@@ -125,8 +132,17 @@ def navigate_experiment(experiment_root):
                 continue
 
             # Process the block.
-            print(f"Processing condition: {light.title()}, {obstacle.title()}")
-            block_preprocessing(eeg_file_path, trial_results_path)
+
+            if (debug):
+                print("\n ====== \n")
+                print(f"CURRENT EXPERIMENT: {experiment_root}")
+                print(
+                    f"Processing condition: {light.title()}, {obstacle.title()}")
+                print(f"file_path: {eeg_file_path}")
+                print(f"meta_info_path: {trial_results_path}")
+                print("\n ====== \n")
+            else:
+                block_preprocessing(eeg_file_path, trial_results_path)
 
 
 def block_preprocessing(file_path, meta_info_path):
@@ -135,13 +151,17 @@ def block_preprocessing(file_path, meta_info_path):
 
     raw = load_and_configure_data(file_path, montage_path)
 
-    filter_and_detrend_data(raw)
+    # filter_and_detrend_data(raw)
 
-    apply_ICA(raw)
+    # apply_ICA(raw)
     trial_events = create_trial_events(raw)
-    create_epochs(raw, trial_events, meta_info_path)
+    epochs = create_epochs(raw, trial_events, meta_info_path)
+    print("\n ====== EPOCHS ====== \n")
+    print(epochs)
+    print("\n ====== \n")
+    # raw.plot()
 
-    raw.plot()
 
-
-navigate_experiment(experiment_root)
+# load_multiple_experiments()
+block_preprocessing(r"E:\PID 3\FIF\PID 3 LIGHT EXPECTED.fif",
+                    r"E:\PID 3\UNITY\pid 3 light expected\S005\trial_results.csv")

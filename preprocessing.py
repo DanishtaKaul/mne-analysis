@@ -211,106 +211,96 @@ def create_epochs(raw):
 # Within each trial, it should be the sequential occurance of said events aka: Trial start, Walk, Right foot Croosbounds etc...
 """
 
+''
+
 
 def create_trial_events(raw):
-
-    # Create events based in their trial and then group their events
-    # End trial = reset trial
-    events, events_dict = mne.events_from_annotations(raw)
-
-    # All event names are unique due to a timestamp that is independent of the experiment time.
-    #   -> The event_dict contains hundreds of records of every event.
-
-    # Use regex rule(\d+\.\d+) to retrive timestamps from the event_dict and sort via timestamps to retrieve sequential events.
-    # Then break up events with startTrial
-    # Get Start and End events that define a trial
-    timestamps = []
-    for key, value in events_dict.items():
-        timestamp = re.search(r'\d+\.\d+', key)
-
-        timestamps.append(
-            {'time': float(timestamp.group()), 'event': {key: value}})
-
-    timestamps = sorted(timestamps, key=lambda a: a['time'])
-    trialEvents = []
-    currentTrial = [timestamps[0]['event']]
-
-    # Loop over the timestamps
-    for timestamp in timestamps:
-        key = list(timestamp['event'].keys())[0]  # Extract key correctly
-
-        if "Start Trial" in key:
-            trialEvents.append(currentTrial)
-            currentTrial = [timestamp['event']]
+    """
+    Create trial events using the absolute sample indices from the events array.
+    Each event is stored as a dictionary with 'sample' (absolute sample index)
+    and 'label' (annotation label).
+    """
+    # Get events array and mapping from annotations to event codes.
+    events, event_id = mne.events_from_annotations(raw)
+    
+    # Invert event_id to map event code to label.
+    code_to_label = {code: label for label, code in event_id.items()}
+    
+    trial_events = []
+    current_trial = []
+    
+    # The events array is already sorted by sample index.
+    for event in events:
+        sample = event[0]              # Absolute sample index in raw data
+        code = event[2]
+        label = code_to_label.get(code, "")
+        ev_dict = {"sample": sample, "label": label}
+        
+        # Use "Start Trial" to mark the beginning of a new trial.
+        if "Start Trial" in label:
+            if current_trial:
+                trial_events.append(current_trial)
+            current_trial = [ev_dict]
         else:
-            currentTrial.append(timestamp['event'])
-
-    if currentTrial:
-        # Append last trial if needed
-        trialEvents.append(currentTrial)
-
-    return trialEvents
+            current_trial.append(ev_dict)
+    
+    if current_trial:
+        trial_events.append(current_trial)
+    
+    return trial_events
 
 
 def create_epochs(raw, trialEvents, meta_info_path):
     """
-    For each trial, this function extracts the crossing times using the event values.
-    It expects each event's key to contain:
-        - "ObstacleCrossingBounds start" for the start of the crossing
-        - "ObstacleCrossingBounds end" for the end of the crossing
-
-    The function creates an epoch for each trial defined from:
-        (cs - 2.5 seconds) to (ce + 1.5 seconds)
-    where cs and ce are the times (in seconds) corresponding to the start and end of the crossing, respectively.
-
+    For each trial, extract crossing times using the absolute sample indices.
+    The epoch is defined from (crossing start - 2.5 s) to (crossing end + 1.5 s)
+    in absolute seconds on the raw file.
+    
     Parameters:
-        raw : mne.io.Raw
-            The raw data file (used for sample-to-time conversion).
-        trialEvents : list
-            A list of trials, where each trial is a list of event dictionaries.
-            Each dictionary has a single key-value pair (key: event description, value: sample index).
-        meta_info_path : str
-            The path to the metadata CSV file.
-
+      - raw: mne.io.Raw object.
+      - trialEvents: List of trials, where each trial is a list of event dictionaries.
+      - meta_info_path: Path to the metadata CSV file.
+      
     Returns:
-        epochs : list of tuples
-            A list where each tuple contains the start and end time (in seconds) of an epoch.
+      - epochs: List of tuples, each containing (epoch_start, epoch_end) in seconds.
     """
-
     epochs = []
     sfreq = raw.info['sfreq']
-
-    # Load metadata
+    
+    # Load metadata.
     meta = pd.read_csv(meta_info_path)
-
+    
     def trial_is_absent(index):
+        # Adjusting for 1-based indexing in metadata if needed.
         return meta.loc[index + 1, 'ExistanceLevel'] == 'Absent'
-
+    
     for index, trial in enumerate(trialEvents):
         cs_time = None  # Crossing start time in seconds
         ce_time = None  # Crossing end time in seconds
-
+        
         for event in trial:
-            key = list(event.keys())[0]
-            val = list(event.values())[0]
-
+            label = event['label']
+            # Convert the absolute sample index to seconds.
+            time_in_sec = event['sample'] / sfreq
+            
             if trial_is_absent(index):
-                # Trial is absent, look for the midpoint crossing event
-                if "ObstacleCrossingMid start" in key:
-                    cs_time = val / sfreq
-                elif "ObstacleCrossingMid end" in key:
-                    ce_time = val / sfreq
+                # For absent trials, look for the midpoint crossing events.
+                if "ObstacleCrossingMid start" in label:
+                    cs_time = time_in_sec
+                elif "ObstacleCrossingMid end" in label:
+                    ce_time = time_in_sec
             else:
-                # Obstacle available, look for crossing bounds
-                if "ObstacleCrossingBounds start" in key:
-                    cs_time = val / sfreq  # Convert sample index to seconds
-                elif "ObstacleCrossingBounds end" in key:
-                    ce_time = val / sfreq
-
-        # Only create an epoch if both crossing times are found.
+                # For trials with an obstacle, use the crossing bounds events.
+                if "ObstacleCrossingBounds start" in label:
+                    cs_time = time_in_sec
+                elif "ObstacleCrossingBounds end" in label:
+                    ce_time = time_in_sec
+        
+        # Only create an epoch if both crossing times were found.
         if cs_time is not None and ce_time is not None:
+            # These boundaries are absolute times on the raw file.
             epoch_start = cs_time - 2.5
             epoch_end = ce_time + 1.5
             epochs.append((epoch_start, epoch_end))
-
+    
     return epochs
