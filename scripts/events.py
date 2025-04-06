@@ -1,9 +1,15 @@
 import mne
+from scripts import logger
 
 """
     Create trial events using the absolute sample indices from the events array.
     Each event is stored as a dictionary with 'sample' (absolute sample index)
     and 'label' (annotation label).
+
+
+    Essentially, this function gives an array of sequential events (array) with the event sample and the event label (object)
+    Trial event example:
+    {"sample": 7446, "label": "Return Walk at 149.4744"}
 
     @Params raw
      The raw data file
@@ -13,6 +19,7 @@ def create_trial_events(raw):
    
     # Get events array and mapping from annotations to event codes.
     events, event_id = mne.events_from_annotations(raw)
+    
     
     # Invert event_id to map event code to label.
     code_to_label = {code: label for label, code in event_id.items()}
@@ -37,6 +44,8 @@ def create_trial_events(raw):
     
     if current_trial:
         trial_events.append(current_trial)
+    
+    print(trial_events)
     
     return trial_events
 

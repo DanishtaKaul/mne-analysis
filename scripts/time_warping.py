@@ -8,6 +8,12 @@ from scipy import signal
 from scripts import logger
 
 
+
+"""
+the epochs should time warp to the median of the time
+"""
+
+
 def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
     """
     Create time-aligned epochs using Dynamic Time Warping (DTW).

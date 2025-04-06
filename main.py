@@ -16,7 +16,6 @@ EEG Preprocessing Pipeline
 
 from scripts.navigation import navigate_experiment, process_multiple_experiments
 from scripts.block_pipeline import process_block
-
 from config import (
     file_path,
     meta_info_path,
