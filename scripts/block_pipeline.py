@@ -9,12 +9,14 @@ from config import montage_path
 """
     
 """
+
+
 def process_block(file_path, meta_info_path, montage_path=montage_path):
     logger.info(f"Running preprocessing block on: {file_path}")
 
     raw = load_and_configure_data(file_path, montage_path)
 
-    # raw = filter_and_detrend_data(raw)
+    raw = filter_and_detrend_data(raw)
     # raw = apply_ICA(raw)
 
     trial_events = create_trial_events(raw)
@@ -24,6 +26,3 @@ def process_block(file_path, meta_info_path, montage_path=montage_path):
 
     # logger.info(f"Created {len(epochs)} raw epochs")
     # logger.info(f"Aligned shape: {aligned_epochs.get_data().shape}")
-
-
-    

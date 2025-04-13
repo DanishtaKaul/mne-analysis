@@ -11,10 +11,12 @@ from scripts import logger
      The raw data file
 """
 
+
 def filter_and_detrend_data(raw):
     raw.filter(l_freq=1.0, h_freq=40.0, fir_design='firwin')
     signal.detrend(raw.get_data(), axis=1)
-    raw.set_eeg_reference('average', projection=False) 
+    # average reference data
+    raw.set_eeg_reference('average', projection=False)
     return raw
 
 
@@ -24,6 +26,8 @@ def filter_and_detrend_data(raw):
  @Params raw
      The raw data file
 """
+
+
 def apply_ICA(raw):
 
     ica = mne.preprocessing.ICA(
@@ -67,5 +71,5 @@ def apply_ICA(raw):
     # Visual checks
     ica.plot_scores(eog_scores)
     ica.plot_components()
-    
+
     return raw
