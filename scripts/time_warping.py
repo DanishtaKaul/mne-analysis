@@ -1,134 +1,133 @@
-# scripts/time_warping.py
-
 import numpy as np
 import pandas as pd
 import mne
 from scipy import signal
-import tslearn
-
+from tslearn.metrics import dtw_path
+from config import debug, pre_crossing_sec
 from scripts import logger
-
-
-"""
-the epochs should time warp to the median of the time
-"""
-
+import matplotlib.pyplot as plt  # Needed for debug plotting
 
 def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
     """
     Create time-aligned epochs using Dynamic Time Warping (DTW).
 
     Parameters:
-      - raw: mne.io.Raw object
-      - trialEvents: List of trials, each containing event dictionaries
-      - meta_info_path: Path to the metadata CSV file
+        raw (mne.io.Raw): Continuous EEG recording
+        trialEvents (list): List of trials, each containing event dicts
+        meta_info_path (str): Path to Unity metadata CSV
 
     Returns:
-      - aligned_epochs: mne.Epochs object with time-aligned data
+        aligned_epochs (mne.EpochsArray): DTW-aligned epochs
     """
-    sfreq = raw.info['sfreq']  # get sampling frequency
-    meta = pd.read_csv(meta_info_path)  # get unity file
+    sfreq = raw.info['sfreq']
+    meta = pd.read_csv(meta_info_path)
 
-    # Extract crossing events
-    crossing_epochs = []  # contains how long crossing is for each trial
+    crossing_epochs = []
     event_list = []
 
     def trial_is_absent(index):
         return meta.loc[index + 1, 'ExistanceLevel'] == 'Absent'
 
+    # ----------------------------
+    # Step 1: Extract Epochs
+    # Search each trial for the crossing start/end times (cs_time, ce_time)
+    # Use pre_crossing_sec and +1.5 s to define the window
+    # Pull out EEG data from the raw file for that segment
+    # Calculate relative offsets to mark where the crossing happens inside the window
+    # ----------------------------
     for index, trial in enumerate(trialEvents):
-        cs_time = None
-        ce_time = None
+        cs_time, ce_time = None, None  
 
         for event in trial:
             label = event['label']
             time_in_sec = event['sample'] / sfreq
 
             if trial_is_absent(index):
-                # For absent trials, look for midpoint crossing events
                 if "ObstacleCrossingMid start" in label:
                     cs_time = time_in_sec
                 elif "ObstacleCrossingMid end" in label:
                     ce_time = time_in_sec
             else:
-                # For trials with obstacle, use crossing bounds events
                 if "ObstacleCrossingBounds start" in label:
                     cs_time = time_in_sec
                 elif "ObstacleCrossingBounds end" in label:
                     ce_time = time_in_sec
 
-        # Only create an epoch if both crossing times were found
         if cs_time is not None and ce_time is not None:
-            # Create epoch around crossing period with pre and post padding
-            start_sample = int((cs_time - 2.5) * sfreq)
+            start_sample = int((cs_time - pre_crossing_sec) * sfreq)
             end_sample = int((ce_time + 1.5) * sfreq)
 
-            # Extract data for this epoch
-            # start and end sample index of crossing start and end and all channels between it
-            # raw file is cropped into epochs
-            data, times = raw[:, start_sample:end_sample]
+            data, _ = raw[:, start_sample:end_sample]
+            cs_offset = int(pre_crossing_sec * sfreq)
+            ce_offset = int((ce_time - cs_time + pre_crossing_sec) * sfreq)
 
-            # Mark the crossing start and end points within the epoch
-            # 2.5s pre-crossing, find sample index of crossing start
-            cs_offset = int(2.5 * sfreq)
-            # crossing end relative to epoch start
-            # how many seconds after start of epoch does crossing end
-            ce_offset = int((ce_time - cs_time + 2.5) * sfreq)
-
-            # Store the epoch data and crossing points
             crossing_epochs.append({
-                'data': data,  # contains an epoch
+                'data': data,
                 'crossing_start': cs_offset,
-                'crossing_end': ce_offset,
-                'total_length': end_sample - start_sample
+                'crossing_end': ce_offset
             })
 
-            # Store event for later creation of MNE Epochs object
             event_list.append([int(cs_time * sfreq), 0, 1])
 
     if not crossing_epochs:
         raise ValueError("No valid crossing epochs found")
 
-    # Calculate median crossing duration for reference
-    crossing_durations = [ep['crossing_end'] -
-                          ep['crossing_start'] for ep in crossing_epochs]
-    median_duration = int(np.median(crossing_durations))
+    # ----------------------------
+    # Step 2: Choose a Reference Crossing
+    # ----------------------------
+    median_idx = np.argsort([
+        ep['crossing_end'] - ep['crossing_start']
+        for ep in crossing_epochs
+    ])[len(crossing_epochs) // 2]
 
-    # Use DTW to align all crossing periods to a reference
+    reference = crossing_epochs[median_idx]
+    reference_crossing = reference['data'][:, reference['crossing_start']:reference['crossing_end']]
+    reference_duration = reference_crossing.shape[1]
+
+    # ----------------------------
+    # Step 3: Align Each Epoch to Reference
+    # ----------------------------
     aligned_data = []
-    tmin = -2.5
 
     for epoch in crossing_epochs:
-        # Extract pre-crossing, crossing, and post-crossing segments
-        # gets 2.5 sec before crossing start : all channels, :epoch= crops epoch from start of epoch till crossing start
         pre_data = epoch['data'][:, :epoch['crossing_start']]
-        crossing_data = epoch['data'][:,
-                                      epoch['crossing_start']:epoch['crossing_end']]
-        # gets 1.5sec after crossing end
+        crossing_data = epoch['data'][:, epoch['crossing_start']:epoch['crossing_end']]
         post_data = epoch['data'][:, epoch['crossing_end']:]
 
-        # Apply DTW to the crossing segment (channel by channel)
-        aligned_crossing = np.zeros((crossing_data.shape[0], median_duration))
+        aligned_crossing = np.zeros((crossing_data.shape[0], reference_duration))
 
         for ch_idx in range(crossing_data.shape[0]):
-            # Resample crossing data to the median duration
-            # This is a simplified approach - for true DTW use the tslearn library
-            aligned_crossing[ch_idx] = signal.resample(
-                crossing_data[ch_idx], median_duration)
+            ref = reference_crossing[ch_idx][:, np.newaxis]
+            target = crossing_data[ch_idx][:, np.newaxis]
 
-        # Keep pre and post segments unchanged
+            path, _ = dtw_path(ref, target)
+
+            warped = np.array([target[j][0] for i, j in path])
+            warped_resampled = signal.resample(warped, reference_duration)
+
+            aligned_crossing[ch_idx] = warped_resampled
+
         aligned_epoch = np.hstack((pre_data, aligned_crossing, post_data))
         aligned_data.append(aligned_epoch)
 
-    # Create MNE Epochs object with aligned data
+    # ----------------------------
+    # Step 4: Create MNE Epochs
+    # ----------------------------
     events = np.array(event_list)
     info = raw.info
 
-    # Create epochs with aligned data
+    if debug:
+        # Plot one example comparison
+        plt.plot(crossing_data[0], label='Original')
+        plt.plot(aligned_crossing[0], label='DTW Aligned')
+        plt.legend()
+        plt.title("Channel 0: Original vs DTW-Aligned Crossing")
+        plt.show()
+
     aligned_epochs = mne.EpochsArray(
-        np.array(aligned_data),
-        info,
-        tmin=tmin,
+        np.stack(aligned_data),  # Ensures uniform shape
+        info=info,
+        tmin=-pre_crossing_sec,
         events=events,
         event_id={1: 1}
     )
