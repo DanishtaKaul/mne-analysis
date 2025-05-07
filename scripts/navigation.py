@@ -1,18 +1,21 @@
 import os
 
-from scripts import logger  
-from scripts.block_pipeline import process_block 
+from scripts import logger
+from scripts.block_pipeline import process_block
 from config import (experiments, debug)
+
 
 def process_multiple_experiments():
     for experiment in experiments:
         navigate_experiment(experiment)
 
 # Navigate through an experiments file structure in the continuous matter of which the experiment ran
+
+
 def navigate_experiment(experiment_root):
     eeg_dir = None
     unity_dir = None
-    
+
     # Find the EEG and Unity directories.
     for item in os.listdir(experiment_root):
         item_path = os.path.join(experiment_root, item)
@@ -24,10 +27,12 @@ def navigate_experiment(experiment_root):
                 unity_dir = item_path
 
     if eeg_dir is None:
-        logger.warning("No EEG folder (with 'fif' in its name) found in experiment root.")
+        logger.warning(
+            "No EEG folder (with 'fif' in its name) found in experiment root.")
         return
     if unity_dir is None:
-        logger.warning("No Unity folder (with 'unity' in its name) found in experiment root.")
+        logger.warning(
+            "No Unity folder (with 'unity' in its name) found in experiment root.")
         return
 
     # Define conditions.
@@ -53,7 +58,8 @@ def navigate_experiment(experiment_root):
                     break
 
             if eeg_file_path is None:
-                logger.info(f"No EEG file found for condition: {light} & {obstacle}")
+                logger.info(
+                    f"No EEG file found for condition: {light} & {obstacle}")
                 continue
 
             # Search for the appropriate Unity block folder.
@@ -103,5 +109,9 @@ def navigate_experiment(experiment_root):
                 logger.info(f"file_path: {eeg_file_path}")
                 logger.info(f"meta_info_path: {trial_results_path}")
                 logger.info("\n ====== \n")
-            else:
-                process_block(eeg_file_path, trial_results_path)
+
+            process_block(eeg_file_path, trial_results_path)
+
+
+if __name__ == "__main__":
+    process_multiple_experiments()

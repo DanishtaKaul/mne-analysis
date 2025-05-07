@@ -1,14 +1,6 @@
+import re
+from collections import defaultdict
 import mne
-
-"""
- Reads raw file, renames electrode channels, sets the montage
-
- @Params file_path
-     The filepath to the raw file
-
- @Params montage_path
-     The filepath to the montage file
-"""
 
 
 def load_and_configure_data(file_path, montage_path):
@@ -49,10 +41,70 @@ def load_and_configure_data(file_path, montage_path):
         'EE214-000000-000116-02-DESKTOP-E45KF45_31': 'O2',
         'EE214-000000-000116-02-DESKTOP-E45KF45_32': 'N/A1',
         'EE214-000000-000116-02-DESKTOP-E45KF45_33': 'N/A2',
-    }
-    )
+    })
     raw.drop_channels({'M1', 'M2', 'N/A1', 'N/A2'})
     montage = mne.channels.read_custom_montage(montage_path)
     raw.set_montage(montage)
-    return raw
 
+# =============================================================================
+#     print("\n=== Trigger Summary by Trial ===")
+#     annotations = raw.annotations
+#
+#     def clean_trigger(label):
+#         label = label.split(" at ")[0].strip()
+#         label = re.sub(r": \d+$", "", label)
+#         return label
+#
+#     trial_starts = [
+#         (i, onset) for i, (desc, onset) in enumerate(zip(annotations.description, annotations.onset))
+#         if "Start Trial" in desc
+#     ]
+#
+#     trial_events = defaultdict(list)
+#
+#     for idx, (start_idx, start_onset) in enumerate(trial_starts):
+#         end_onset = trial_starts[idx + 1][1] if idx + \
+#             1 < len(trial_starts) else raw.times[-1]
+#         for desc, onset in zip(annotations.description, annotations.onset):
+#             if start_onset <= onset < end_onset:
+#                 trial_events[idx].append(clean_trigger(desc))
+#
+#     for trial_idx, events in trial_events.items():
+#         print(f"Trial {trial_idx + 1}: {sorted(set(events))}")
+#
+#     common_labels = set(trial_events[0])
+#     for evs in trial_events.values():
+#         common_labels &= set(evs)
+#
+#     print("\nTriggers present in EVERY trial:", sorted(common_labels))
+#
+#     print("\n=== Estimated Walking Onset Per Trial ===")
+#
+#     for idx, (start_idx, start_onset) in enumerate(trial_starts):
+#         end_onset = trial_starts[idx + 1][1] if idx + \
+#             1 < len(trial_starts) else raw.times[-1]
+#
+#         walk_onset = None
+#         fallback_onset = None
+#
+#         for desc, onset in zip(annotations.description, annotations.onset):
+#             if start_onset <= onset < end_onset:
+#                 cleaned = clean_trigger(desc)
+#
+#                 if cleaned == "Return Walk":
+#                     walk_onset = onset
+#                     break
+#                 elif "ObstacleCrossingBounds start" in cleaned and fallback_onset is None:
+#                     fallback_onset = onset - 1.0
+#
+#         final_walk_onset = walk_onset if walk_onset else fallback_onset
+#         if final_walk_onset:
+#             print(
+#                 f"Trial {idx + 1}: Walking estimated at {final_walk_onset:.2f} s")
+#         else:
+#             print(f"Trial {idx + 1}: Walking onset could not be estimated.")
+# =============================================================================
+    # Plot PSD before filtering
+    raw.plot_psd(fmax=60)
+
+    return raw

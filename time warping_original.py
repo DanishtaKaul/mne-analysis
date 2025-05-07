@@ -15,7 +15,6 @@ from scripts import logger
 import matplotlib.pyplot as plt  # Needed for debug plotting
 from collections import Counter
 import sys
-from autoreject import AutoReject
 
 
 def pad_or_crop_epoch(epoch_data, target_length):
@@ -57,53 +56,17 @@ def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
     sfreq = raw.info['sfreq']
     meta = pd.read_csv(meta_info_path)
 
-    # ---------------------------------------------
-    # STEP 0.5: Use AutoReject to find & interpolate bad channels and remove bad epochs
-    # ---------------------------------------------
-
-    # Create long epochs around obstacle events for AutoReject to evaluate
-    # go a bit longer to ensure safety buffer for bad segments
-    tmin = -pre_crossing_sec
-    tmax = post_crossing_sec + 2.0  # Add extra padding
-
-    # First build a simplified event list from trialEvents
-    crossing_onsets = []
-    for trial in trialEvents:
-        for event in trial:
-            if "ObstacleCrossing" in event['label']:
-                crossing_onsets.append([event['sample'], 0, 1])  # event_id=1
-                break  # only first relevant marker per trial
-
-    events = np.array(crossing_onsets)
-
-    # Create epochs for AutoReject to inspect
-    epochs = mne.Epochs(raw, events=events, event_id={"crossing": 1}, tmin=tmin, tmax=tmax,
-                        baseline=None, preload=True)
-
-    # Run AutoReject to fix bad channels and mark bad epochs
-    ar = AutoReject(n_interpolate=[1, 2, 3, 4], consensus=[
-                    0.3, 0.7, 1.0], random_state=42)
-    epochs_clean, reject_log = ar.fit_transform(epochs, return_log=True)
-
-    # Keep only the trials that were not completely bad
-    kept_indices = np.where(~reject_log.bad_epochs)[0]
-
-    # Keep matching Unity metadata and trialEvents
-    trialEvents = [trialEvents[i] for i in kept_indices]
-    # ensures meta_row matches trialEvents[i] directly without skipping rows or going out of bounds.
-    meta = [meta.iloc[i] for i in kept_indices]
-
     # empty list to store epochs,this will also include where obstacle crossing happened in the epoch
     crossing_epochs = []
     event_list = []
 
-    def trial_is_absent(meta_row):
+    def trial_is_absent(index):
         # if index + 1 >= len(meta):  # check if next row is within bounds of dataframe
         # If this is the last trial and +1 is out of bounds log a warning
         # logger.warning(
         # f"WARNING: Row {index + 1} does not exist in metadata (length={len(meta)}). Assuming obstacle is present.")
         # return False  # fallback assumption: obstacle is present
-        return meta_row['ExistanceLevel'] == 'Absent'
+        return meta.iloc[index + 1]['ExistanceLevel'] == 'Absent'
 
     # ----------------------------
     # Step 1: Extract Epochs
@@ -120,7 +83,7 @@ def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
     # ----------------------------
     # loop over each trial which is a list of event dictionaries that mark time-stamped events during that trial (obstaclecrossing start, end etc)
 
-    for idx, (trial, meta_row) in enumerate(zip(trialEvents, meta)):
+    for index, trial in enumerate(trialEvents):
         # these will hold start and end times of obstacle crossing, they're none now so i can check if they're found later
         cs_time, ce_time = None, None
 
@@ -131,21 +94,16 @@ def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
             time_in_sec = event['sample'] / sfreq
 
             # extract the correct labels based on obstacle condition. If the obstacle was absent, the crossing labels used are ObstacleCrossingMid start/end
-            if trial_is_absent(meta_row):
-                if "Toe" and "Mid" and "start" in label and cs_time is None:
+            if trial_is_absent(index):
+                if "ObstacleCrossingMid start" in label:
                     cs_time = time_in_sec
-                elif "Heel" and "Mid" and "end" in label and ce_time is None:
+                elif "ObstacleCrossingMid end" in label:
                     ce_time = time_in_sec
             else:  # obstacle is present
-                # these are the labels to extract when obstacle is present
-                if "Toe" and "Bounds" and "start" in label and cs_time is None:
+                if "ObstacleCrossingBounds start" in label:  # these are the labels to extract when obstacle is present
                     cs_time = time_in_sec  # cs_time = timestamp when participant started crossing
-                elif "Heel" and "Bounds" and "end" in label and ce_time is None:
+                elif "ObstacleCrossingBounds end" in label:
                     ce_time = time_in_sec  # timestamp when participant finished crossing
-
-        if debug and cs_time is None or ce_time is None:
-            sys.exit(
-                f"Marker missing, a crossing time is not found. \n Crossing start time: {cs_time} \n Crossing end time: {ce_time} \n Event: {event}")
 
         if cs_time is not None and ce_time is not None:  # define epoch time window
             # extracting data starting 2.5s before crossing, converted to sample indices
@@ -290,8 +248,5 @@ def align_epochs_with_dtw(raw, trialEvents, meta_info_path):
         event_id={"crossing": 1}
     )
     print("Channel 0 label:", raw.ch_names[0])
-
-    if debug:
-        reject_log.plot()
 
     return aligned_epochs
