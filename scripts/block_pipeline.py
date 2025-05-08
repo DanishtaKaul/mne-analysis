@@ -2,8 +2,9 @@ from scripts import logger
 from scripts.load_config import load_and_configure_data
 from scripts.preprocessing import filter_and_detrend_data, apply_ICA
 from scripts.events import create_trial_events
-from scripts.epoching import create_epochs
-from scripts.time_warping import align_epochs_with_dtw
+from scripts.epoching import identify_epochs
+from scripts.time_warping import time_warping
+from scripts.autoreject import autoreject
 from config import montage_path
 # from autoreject import AutoReject
 
@@ -23,9 +24,11 @@ def process_block(file_path, meta_info_path, montage_path=montage_path):
     # raw = apply_ICA(raw)
 
     trial_events = create_trial_events(raw)
-    epochs = create_epochs(raw, trial_events, meta_info_path)
+    crossing_epochs = identify_epochs(raw, trial_events, meta_info_path)
+    epochs_clean, kept_indicies = autoreject(raw, crossing_epochs)
+    aligned_epochs = time_warping(raw, crossing_epochs, kept_indicies)
 
-    aligned_epochs = align_epochs_with_dtw(raw, trial_events, meta_info_path)
+    
     # Autoreject to further clean epochs
     # ar = AutoReject() #ar = AutoReject() creates an autoreject obkect which automatically find and repair or reject bad parts of EEG epochs
     # aligned_epochs_clean, reject_log = ar.fit_transform(aligned_epochs, return_log=True) #aligned_epochs_clean- epochs with bad channels and trials fixed or dropped

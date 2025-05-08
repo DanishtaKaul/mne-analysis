@@ -20,13 +20,16 @@ from config import (
     experiments,
     montage_path,
     debug,
+    file_path,
+    meta_info_path
 )
 
 
 def main():
-    process_multiple_experiments()
+   #process_multiple_experiments()
   # navigate_experiment(experiment)
-   # process_block(r"E:\PID 5\FIF\PID 5 DARK UNEXPECTED.fif",r"E:\PID 5\UNITY\PID 5 DARK UNEXPECTED\S002\trial_results.csv", montage_path)
+   #process_block(r"E:\PID 5\FIF\PID 5 DARK UNEXPECTED.fif",r"E:\PID 5\UNITY\PID 5 DARK UNEXPECTED\S002\trial_results.csv", montage_path)
+   process_block(file_path, meta_info_path, montage_path)
 
 
 # Lets it run directly from terminal

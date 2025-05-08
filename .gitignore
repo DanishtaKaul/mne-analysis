@@ -7,3 +7,4 @@ results/
 *.xlsx
 ./spyproject/
 private/
+./config.py
